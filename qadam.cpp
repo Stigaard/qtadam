@@ -24,13 +24,39 @@
 QADAM::QADAM(QHostAddress ip): QThread()
 {
   this->ip = ip;
-  this->socket = new QTcpSocket(this);
-  this->socket->connectToHost(this->ip, 502, QIODevice::ReadWrite);
-  this->socket->waitForConnected();
+  //this->start();
+  this->run();
 }
+
+void QADAM::run()
+{
+  this->socket = new QTcpSocket(this);
+  this->reconnect();
+//  connect(&(this->connectionStateTimer), SIGNAL(timeout()), this, SLOT(reconnect()));
+    connect(&(this->connectionStateTimer), SIGNAL(timeout()), this, SLOT(verifyOutputs()));
+  this->connectionStateTimer.start(300);
+ // connect(this->socket, SIGNAL(disconnected()), this, SLOT(reconnect()));
+//  exec();
+}
+
+void QADAM::reconnect(void )
+{
+    
+    if(this->socket->state()==QTcpSocket::UnconnectedState)
+      {
+      this->socketLock.lock();
+      this->socket->connectToHost(this->ip, 502, QIODevice::ReadWrite);
+      this->socket->waitForConnected(300);
+      this->socketLock.unlock();
+      }
+    
+}
+
 
 void QADAM::write_bit(quint8 bit, bool data)
 {
+  this->socketLock.lock();
+  std::cout << "Was ordered to set " << (quint32)bit << " : " << data << std::endl;
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};
   const unsigned char length_field[2] = {00, 06};
@@ -45,16 +71,35 @@ void QADAM::write_bit(quint8 bit, bool data)
 		 unit_id, function_code, coil_adr[0], coil_adr[1], coil_force_data[0], coil_force_data[1]};
 		 
 
-  for(int i=0;i<sizeof(frame);i++)
-    std::cout << std::dec << (unsigned int)frame[i] << " ";
-  std::cout << std::endl;
-  this->socket->write(frame, sizeof(frame));
-  this->socket->waitForBytesWritten();
-  this->socket->waitForReadyRead();
+//   for(int i=0;i<sizeof(frame);i++)
+//     std::cout << std::dec << (unsigned int)frame[i] << " ";
+//   std::cout << std::endl;
+qint64 bytesWritten;
+bool succededWrite;
+bool outputStatus;
+  do
+  {
+    if(this->socket->state()==QTcpSocket::UnconnectedState)
+      {
+	std::cout << "Found in unconnected state!, inline" << std::endl;
+	this->socketLock.unlock();
+	this->reconnect();
+	this->socketLock.lock();
+      }
+      bytesWritten = this->socket->write(frame, sizeof(frame));
+      succededWrite = this->socket->waitForBytesWritten(100);
+      this->socketLock.unlock();
+      outputStatus = (this->getOutputStatus() & 1<<bit)>0;
+      this->socketLock.lock();
+      
+  }while((succededWrite==false) || (bytesWritten!=sizeof(frame)) || (outputStatus!=data));
+  //this->socket->waitForReadyRead();
+  this->socketLock.unlock();
 }
 
 void QADAM::write_byte(quint8 data)
 {
+  this->socketLock.lock();
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};
   const unsigned char length_field[2] = {00, 06};
@@ -72,11 +117,13 @@ void QADAM::write_byte(quint8 data)
   std::cout << std::endl;
   this->socket->write(frame, sizeof(frame));
   this->socket->waitForBytesWritten();
-  this->socket->waitForReadyRead();
+//  this->socket->waitForReadyRead();
+  this->socketLock.unlock();
 }
 
 quint8 QADAM::getOutputStatus(void )
 {
+  this->socketLock.lock();
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};
   const unsigned char length_field[2] = {00, 06};
@@ -97,11 +144,19 @@ quint8 QADAM::getOutputStatus(void )
   char data[11];
   while(this->socket->bytesAvailable()<11);
   int readSize = this->socket->read(data, 11);
+  this->socketLock.unlock();
   return data[10];
 }
 
+void QADAM::verifyOutputs(void )
+{
+  getOutputStatus();
+}
+
+
 quint8 QADAM::getInputState(void )
 {
+  this->socketLock.lock();
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};
   const unsigned char length_field[2] = {00, 06};
@@ -122,6 +177,7 @@ quint8 QADAM::getInputState(void )
   char data[11];
   while(this->socket->bytesAvailable()<11);
   int readSize = this->socket->read(data, 11);
+  this->socketLock.unlock();
   return data[10];
 }
 

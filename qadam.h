@@ -20,15 +20,18 @@
 #ifndef QADAM_H
 #define QADAM_H
 
-#include <qt4/QtCore/QThread>
-#include <qt4/QtNetwork/QTcpSocket>
-#include <qt4/QtNetwork/QHostAddress>
+#include <QThread>
+#include <QTcpSocket>
+#include <QHostAddress>
+#include <QTimer>
+#include <QMutex>
 
 class QADAM : public QThread
 {
   Q_OBJECT
 public:
     QADAM(QHostAddress ip);
+    virtual void run();
     quint8 getOutputStatus(void);
     quint8 getInputState(void);
 public slots:
@@ -37,6 +40,11 @@ public slots:
 private:
   QTcpSocket *socket;
   QHostAddress ip;
+  QTimer connectionStateTimer;
+  QMutex socketLock;
+  void verifyOutputs(void);
+private slots:
+  void reconnect(void);
 };
 
 #endif // QADAM_H
