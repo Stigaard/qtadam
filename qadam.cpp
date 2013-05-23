@@ -32,6 +32,10 @@ void QADAM::run()
 {
   this->socket = new QTcpSocket(this);
   this->reconnect();
+  if(this->socket->state()!=QAbstractSocket::ConnectedState)
+    neverconnected = true;
+  else
+    neverconnected = false;
 //  connect(&(this->connectionStateTimer), SIGNAL(timeout()), this, SLOT(reconnect()));
     connect(&(this->connectionStateTimer), SIGNAL(timeout()), this, SLOT(verifyOutputs()));
   this->connectionStateTimer.start(300);
@@ -55,8 +59,10 @@ void QADAM::reconnect(void )
 
 void QADAM::write_bit(quint8 bit, bool data)
 {
-  this->socketLock.lock();
   std::cout << "Was ordered to set " << (quint32)bit << " : " << data << std::endl;
+  if(neverconnected)
+    return;
+  this->socketLock.lock();
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};
   const unsigned char length_field[2] = {00, 06};
@@ -77,6 +83,7 @@ void QADAM::write_bit(quint8 bit, bool data)
 qint64 bytesWritten;
 bool succededWrite;
 bool outputStatus;
+int attempts = 0;
   do
   {
     if(this->socket->state()==QTcpSocket::UnconnectedState)
@@ -91,7 +98,9 @@ bool outputStatus;
       this->socketLock.unlock();
       outputStatus = (this->getOutputStatus() & 1<<bit)>0;
       this->socketLock.lock();
-      
+      attempts++;
+      if(attempts > 10)
+	break;
   }while((succededWrite==false) || (bytesWritten!=sizeof(frame)) || (outputStatus!=data));
   //this->socket->waitForReadyRead();
   this->socketLock.unlock();
@@ -99,6 +108,8 @@ bool outputStatus;
 
 void QADAM::write_byte(quint8 data)
 {
+  if(neverconnected)
+    return;
   this->socketLock.lock();
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};
@@ -123,6 +134,8 @@ void QADAM::write_byte(quint8 data)
 
 quint8 QADAM::getOutputStatus(void )
 {
+  if(neverconnected)
+    return 0;
   this->socketLock.lock();
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};
@@ -142,7 +155,14 @@ quint8 QADAM::getOutputStatus(void )
   int bytesRead = 0;
   
   char data[11];
-  while(this->socket->bytesAvailable()<11);
+  int attempts = 0;
+  while(this->socket->bytesAvailable()<11)
+  {
+    this->msleep(10);
+    attempts++;
+    if(attempts>10)
+      break;
+  }
   int readSize = this->socket->read(data, 11);
   this->socketLock.unlock();
   return data[10];
@@ -156,6 +176,8 @@ void QADAM::verifyOutputs(void )
 
 quint8 QADAM::getInputState(void )
 {
+  if(neverconnected)
+    return 0;
   this->socketLock.lock();
   const unsigned char Transaction_id[2] = {00, 01};
   const unsigned char protocol_id[2] = {00, 00};

@@ -42,6 +42,7 @@ private:
   QHostAddress ip;
   QTimer connectionStateTimer;
   QMutex socketLock;
+  bool neverconnected;
   void verifyOutputs(void);
 private slots:
   void reconnect(void);
