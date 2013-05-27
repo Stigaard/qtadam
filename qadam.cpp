@@ -59,7 +59,7 @@ void QADAM::reconnect(void )
 
 void QADAM::write_bit(quint8 bit, bool data)
 {
-  std::cout << "Was ordered to set " << (quint32)bit << " : " << data << std::endl;
+ // std::cout << "Was ordered to set " << (quint32)bit << " : " << data << std::endl;
   if(neverconnected)
     return;
   this->socketLock.lock();
